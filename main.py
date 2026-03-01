@@ -2,20 +2,24 @@ import asyncio
 import logging
 from aiogram import Bot, Dispatcher
 from config import BOT_TOKEN
+from handlers import router as commands_router
 
-# Логирование
+# Настройка логгирования
 logging.basicConfig(level=logging.INFO)
 
-# Инициализация бота и диспетчера
+# Создаём бота и диспетчер
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
+
+# Подключаем обработчики
+dp.include_router(commands_router)
 
 
 async def main():
     """Запуск бота"""
-    logging.info("Бот запускается...")
+    logging.info("Запуск бота...")
     
-    # Запуск polling
+    # Запускаем polling (бот слушает сообщения)
     await dp.start_polling(bot)
 
 
