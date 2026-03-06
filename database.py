@@ -1,6 +1,9 @@
 import aiosqlite
+import os
 
-DB_NAME = "students.db"
+# Путь к папке с проектом (где лежит database.py)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_NAME = os.path.join(BASE_DIR, "students.db")
 
 async def init_db():
     async with aiosqlite.connect(DB_NAME) as db:
@@ -43,12 +46,41 @@ async def init_db():
 
 # Функции для студентов
 async def add_student(telegram_id: int, full_name: str):
+    """Добавить студента. Возвращает True если успешно, False если уже существует"""
     async with aiosqlite.connect(DB_NAME) as db:
+        # Проверяем есть ли уже студент с таким ID
+        cursor = await db.execute(
+            "SELECT id FROM students WHERE telegram_id = ?",
+            (telegram_id,)
+        )
+        exists = await cursor.fetchone()
+        if exists:
+            return False
+        
         await db.execute(
-            "INSERT OR REPLACE INTO students (telegram_id, full_name) VALUES (?, ?)",
+            "INSERT INTO students (telegram_id, full_name) VALUES (?, ?)",
             (telegram_id, full_name)
         )
         await db.commit()
+        return True
+
+async def student_exists(telegram_id: int) -> bool:
+    """Проверить существует ли студент"""
+    async with aiosqlite.connect(DB_NAME) as db:
+        cursor = await db.execute(
+            "SELECT id FROM students WHERE telegram_id = ?",
+            (telegram_id,)
+        )
+        return await cursor.fetchone() is not None
+
+async def pc_exists(pc_code: str) -> bool:
+    """Проверить существует ли ПК с таким кодом"""
+    async with aiosqlite.connect(DB_NAME) as db:
+        cursor = await db.execute(
+            "SELECT id FROM students WHERE pc_code = ?",
+            (pc_code,)
+        )
+        return await cursor.fetchone() is not None
 
 async def get_student(telegram_id: int):
     async with aiosqlite.connect(DB_NAME) as db:
@@ -57,21 +89,48 @@ async def get_student(telegram_id: int):
             "SELECT * FROM students WHERE telegram_id = ?",
             (telegram_id,)
         )
-        return await cursor.fetchone()
+        row = await cursor.fetchone()
+        if row:
+            return dict(row)
+        return None
 
-async def update_student_pc(telegram_id: int, pc_code: str):
+async def update_student_pc(telegram_id: int, pc_code: str) -> dict:
+    """
+    Назначить ПК студенту.
+    Возвращает dict: {'success': True/False, 'message': 'текст'}
+    """
     async with aiosqlite.connect(DB_NAME) as db:
+        # Проверяем существует ли студент
+        cursor = await db.execute(
+            "SELECT id FROM students WHERE telegram_id = ?",
+            (telegram_id,)
+        )
+        student = await cursor.fetchone()
+        if not student:
+            return {'success': False, 'message': 'Студент с таким ID не найден'}
+        
+        # Проверяем не занят ли ПК другим студентом
+        cursor = await db.execute(
+            "SELECT id FROM students WHERE pc_code = ? AND telegram_id != ?",
+            (pc_code, telegram_id)
+        )
+        pc_busy = await cursor.fetchone()
+        if pc_busy:
+            return {'success': False, 'message': f'ПК {pc_code} уже занят другим студентом'}
+        
         await db.execute(
             "UPDATE students SET pc_code = ? WHERE telegram_id = ?",
             (pc_code, telegram_id)
         )
         await db.commit()
+        return {'success': True, 'message': f'ПК {pc_code} назначен'}
 
 async def get_all_students():
     async with aiosqlite.connect(DB_NAME) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute("SELECT * FROM students")
-        return await cursor.fetchall()
+        rows = await cursor.fetchall()
+        return [dict(row) for row in rows]
 
 # Функции для админов
 async def add_admin(telegram_id: int):
@@ -90,3 +149,46 @@ async def is_admin(telegram_id: int) -> bool:
         )
         result = await cursor.fetchone()
         return bool(result and result[0])
+
+async def delete_student(telegram_id: int) -> bool:
+    """Удалить студента. Возвращает True если успешно"""
+    async with aiosqlite.connect(DB_NAME) as db:
+        cursor = await db.execute(
+            "SELECT id FROM students WHERE telegram_id = ?",
+            (telegram_id,)
+        )
+        exists = await cursor.fetchone()
+        if not exists:
+            return False
+        
+        await db.execute("DELETE FROM students WHERE telegram_id = ?", (telegram_id,))
+        await db.commit()
+        return True
+
+async def update_student_field(telegram_id: int, field: str, value: str) -> dict:
+    """
+    Обновить поле студента.
+    field: 'full_name', 'pc_code', 'phone', 'gitlab_link', 'redmine_link', 'task_text'
+    Возвращает dict: {'success': True/False, 'message': 'текст'}
+    """
+    async with aiosqlite.connect(DB_NAME) as db:
+        # Проверяем существует ли студент
+        cursor = await db.execute(
+            "SELECT id FROM students WHERE telegram_id = ?",
+            (telegram_id,)
+        )
+        student = await cursor.fetchone()
+        if not student:
+            return {'success': False, 'message': 'Студент с таким ID не найден'}
+        
+        # Проверяем что поле существует
+        allowed_fields = ['full_name', 'pc_code', 'phone', 'gitlab_link', 'redmine_link', 'task_text']
+        if field not in allowed_fields:
+            return {'success': False, 'message': 'Недопустимое поле'}
+
+        await db.execute(
+            f"UPDATE students SET {field} = ? WHERE telegram_id = ?",
+            (value, telegram_id)
+        )
+        await db.commit()
+        return {'success': True, 'message': f'Поле {field} обновлено'}
