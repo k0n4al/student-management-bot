@@ -1,8 +1,9 @@
 import asyncio
 import logging
 from aiogram import Bot, Dispatcher
+from aiogram.fsm.storage.memory import MemoryStorage
 from config import BOT_TOKEN, ADMIN_ID
-from handlers import commands_router, admin_router
+from handlers import commands_router, admin_router, profile_router
 from database import init_db, add_admin
 
 # Настройка логгирования
@@ -10,11 +11,12 @@ logging.basicConfig(level=logging.INFO)
 
 # Создаём бота и диспетчер
 bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher()
+dp = Dispatcher(storage=MemoryStorage())
 
 # Подключаем обработчики
 dp.include_router(commands_router)
 dp.include_router(admin_router)
+dp.include_router(profile_router)
 
 
 async def main():
