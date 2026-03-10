@@ -273,10 +273,23 @@ async def process_edit_value(message: Message, state: FSMContext):
     data = await state.get_data()
     student_id = data.get('student_id')
     field = data.get('edit_field')
-    
+
     result = await update_student_field(student_id, field, new_value)
     await message.answer(result['message'])
-    await state.clear()
+    
+    # Не очищаем состояние, а возвращаемся к выбору поля
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="ФИО", callback_data="edit_field_full_name")],
+            [InlineKeyboardButton(text="ПК", callback_data="edit_field_pc_code")],
+            [InlineKeyboardButton(text="Телефон", callback_data="edit_field_phone")],
+            [InlineKeyboardButton(text="GitLab", callback_data="edit_field_gitlab_link")],
+            [InlineKeyboardButton(text="Redmine", callback_data="edit_field_redmine_link")],
+            [InlineKeyboardButton(text="Задача", callback_data="edit_field_task_text")],
+            [InlineKeyboardButton(text="Отмена", callback_data="admin_cancel")],
+        ]
+    )
+    await message.answer("Выберите что хотите изменить ещё:", reply_markup=keyboard)
 
 
 # ========== УДАЛЕНИЕ СТУДЕНТА ==========
