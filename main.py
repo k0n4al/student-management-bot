@@ -3,7 +3,7 @@ import logging
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 from config import BOT_TOKEN, ADMIN_ID
-from handlers import commands_router, admin_router, profile_router
+from handlers import commands_router, admin_router, profile_router, schedule_router
 from database import init_db, add_admin
 
 # Настройка логгирования
@@ -17,6 +17,7 @@ dp = Dispatcher(storage=MemoryStorage())
 dp.include_router(commands_router)
 dp.include_router(admin_router)
 dp.include_router(profile_router)
+dp.include_router(schedule_router)
 
 
 async def main():

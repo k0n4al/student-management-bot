@@ -3,7 +3,7 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from database import is_admin, add_admin, get_all_students, add_student, update_student_pc, student_exists, pc_exists, delete_student, update_student_field
+from database import is_admin, add_admin, get_all_students, add_student, update_student_pc, student_exists, pc_exists, delete_student, update_student_field, add_schedule, get_schedule
 from states import AdminStates
 
 router = Router()
@@ -25,6 +25,7 @@ async def cmd_admin(message: Message):
             [InlineKeyboardButton(text="Назначить ПК", callback_data="admin_set_pc")],
             [InlineKeyboardButton(text="Редактировать студента", callback_data="admin_edit_student")],
             [InlineKeyboardButton(text="Удалить студента", callback_data="admin_delete_student")],
+            [InlineKeyboardButton(text="Расписание", callback_data="admin_schedule")],
             [InlineKeyboardButton(text="Закрыть", callback_data="admin_close")],
         ]
     )
@@ -342,5 +343,184 @@ async def process_delete_confirm(callback: CallbackQuery, state: FSMContext):
         await callback.message.answer(f"Студент с ID {student_id} удалён!")
     else:
         await callback.message.answer(f"Не удалось удалить студента с ID {student_id}")
+
+    await state.clear()
+
+
+# ========== РАСПИСАНИЕ ==========
+
+@router.callback_query(lambda c: c.data == "admin_schedule")
+async def admin_schedule_callback(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
     
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Добавить запись", callback_data="schedule_add")],
+            [InlineKeyboardButton(text="Посмотреть расписание", callback_data="schedule_view")],
+            [InlineKeyboardButton(text="Отмена", callback_data="admin_cancel")],
+        ]
+    )
+    await callback.message.answer("Расписание:", reply_markup=keyboard)
+
+
+@router.callback_query(lambda c: c.data == "schedule_add")
+async def schedule_add_callback(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    await state.clear()
+    
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Отмена", callback_data="admin_cancel")],
+        ]
+    )
+    await callback.message.answer("Введите ID студента:", reply_markup=keyboard)
+    await state.set_state(AdminStates.waiting_for_schedule_student_id)
+
+
+@router.message(AdminStates.waiting_for_schedule_student_id)
+async def process_schedule_student_id(message: Message, state: FSMContext):
+    student_id = message.text.strip()
+    
+    if not student_id.isdigit():
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="Отмена", callback_data="admin_cancel")],
+            ]
+        )
+        await message.answer("Введите корректный ID (число):", reply_markup=keyboard)
+        return
+    
+    if not await student_exists(int(student_id)):
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="Отмена", callback_data="admin_cancel")],
+            ]
+        )
+        await message.answer(f"Студент с ID {student_id} не найден!", reply_markup=keyboard)
+        return
+    
+    await state.update_data(student_id=int(student_id))
+    
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Пн", callback_data="day_mon")],
+            [InlineKeyboardButton(text="Вт", callback_data="day_tue")],
+            [InlineKeyboardButton(text="Ср", callback_data="day_wed")],
+            [InlineKeyboardButton(text="Чт", callback_data="day_thu")],
+            [InlineKeyboardButton(text="Пт", callback_data="day_fri")],
+            [InlineKeyboardButton(text="Сб", callback_data="day_sat")],
+            [InlineKeyboardButton(text="Вс", callback_data="day_sun")],
+            [InlineKeyboardButton(text="Отмена", callback_data="admin_cancel")],
+        ]
+    )
+    await message.answer("Выберите день недели:", reply_markup=keyboard)
+    await state.set_state(AdminStates.waiting_for_schedule_day)
+
+
+@router.callback_query(lambda c: c.data.startswith("day_"))
+async def process_schedule_day(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    
+    day_map = {
+        'day_mon': 'Понедельник',
+        'day_tue': 'Вторник',
+        'day_wed': 'Среда',
+        'day_thu': 'Четверг',
+        'day_fri': 'Пятница',
+        'day_sat': 'Суббота',
+        'day_sun': 'Воскресенье'
+    }
+    
+    day_code = callback.data.replace("day_", "")
+    day_name = day_map.get(callback.data, day_code)
+    
+    await state.update_data(day_of_week=day_name)
+    
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Отмена", callback_data="admin_cancel")],
+        ]
+    )
+    await callback.message.answer(f"{day_name}. Введите время начала (например, 10:00):", reply_markup=keyboard)
+    await state.set_state(AdminStates.waiting_for_schedule_start)
+
+
+@router.message(AdminStates.waiting_for_schedule_start)
+async def process_schedule_start(message: Message, state: FSMContext):
+    start_time = message.text.strip()
+    await state.update_data(start_time=start_time)
+    
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Отмена", callback_data="admin_cancel")],
+        ]
+    )
+    await message.answer("Введите время окончания (например, 12:00):", reply_markup=keyboard)
+    await state.set_state(AdminStates.waiting_for_schedule_end)
+
+
+@router.message(AdminStates.waiting_for_schedule_end)
+async def process_schedule_end(message: Message, state: FSMContext):
+    end_time = message.text.strip()
+    data = await state.get_data()
+    student_id = data.get('student_id')
+    day_of_week = data.get('day_of_week')
+    start_time = data.get('start_time')
+    
+    result = await add_schedule(student_id, day_of_week, start_time, end_time)
+    await message.answer(result['message'])
+    await state.clear()
+
+
+@router.callback_query(lambda c: c.data == "schedule_view")
+async def schedule_view_callback(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    await state.clear()
+    
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Отмена", callback_data="admin_cancel")],
+        ]
+    )
+    await callback.message.answer("Введите ID студента:", reply_markup=keyboard)
+    await state.set_state(AdminStates.waiting_for_schedule_view_id)
+
+
+@router.message(AdminStates.waiting_for_schedule_view_id)
+async def process_schedule_view(message: Message, state: FSMContext):
+    student_id = message.text.strip()
+    
+    if not student_id.isdigit():
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="Отмена", callback_data="admin_cancel")],
+            ]
+        )
+        await message.answer("Введите корректный ID (число):", reply_markup=keyboard)
+        return
+    
+    schedules = await get_schedule(int(student_id))
+    
+    if not schedules:
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="Отмена", callback_data="admin_cancel")],
+            ]
+        )
+        await message.answer(f"У студента с ID {student_id} нет расписания.", reply_markup=keyboard)
+        return
+    
+    text = f"Расписание студента (ID: {student_id}):\n\n"
+    
+    days_order = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье']
+    
+    for day in days_order:
+        day_schedules = [s for s in schedules if s['day_of_week'] == day]
+        if day_schedules:
+            text += f"{day}:\n"
+            for s in day_schedules:
+                text += f"  {s['start_time']} - {s['end_time']}\n"
+            text += "\n"
+    
+    await message.answer(text)
     await state.clear()
