@@ -30,6 +30,7 @@ async def cmd_help(message: Message):
         "/start - Запустить бота\n"
         "/help - Эта справка\n"
         "/profile - Мой профиль\n"
+        "/schedule - Моё расписание\n"
         "/admin - Админ панель (только админ)"
     )
 

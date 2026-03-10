@@ -18,3 +18,10 @@ class AdminStates(StatesGroup):
     # Состояния для удаления студента
     waiting_for_delete_student_id = State()  # Ждём ID студента для удаления
     waiting_for_delete_confirm = State()  # Ждём подтверждение удаления
+    
+    # Состояния для расписания
+    waiting_for_schedule_student_id = State()  # Ждём ID студента для расписания
+    waiting_for_schedule_day = State()  # Ждём день недели
+    waiting_for_schedule_start = State()  # Ждём время начала
+    waiting_for_schedule_end = State()  # Ждём время конца
+    waiting_for_schedule_view_id = State()  # Ждём ID студента для просмотра расписания

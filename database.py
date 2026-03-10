@@ -192,3 +192,46 @@ async def update_student_field(telegram_id: int, field: str, value: str) -> dict
         )
         await db.commit()
         return {'success': True, 'message': f'Поле {field} обновлено'}
+
+
+# ========== ФУНКЦИИ ДЛЯ РАСПИСАНИЯ ==========
+
+async def add_schedule(telegram_id: int, day_of_week: str, start_time: str, end_time: str) -> dict:
+    # Добавить запись в расписание студента. Возвращает dict: {'success': True/False, 'message': 'текст'}
+    async with aiosqlite.connect(DB_NAME) as db:
+        # Проверяем существует ли студент и получаем его внутренний ID
+        cursor = await db.execute(
+            "SELECT id FROM students WHERE telegram_id = ?",
+            (telegram_id,)
+        )
+        student = await cursor.fetchone()
+        if not student:
+            return {'success': False, 'message': 'Студент с таким ID не найден'}
+        
+        # Сохраняем внутренний ID студента, а не telegram_id
+        await db.execute(
+            "INSERT INTO schedule (student_id, day_of_week, start_time, end_time) VALUES (?, ?, ?, ?)",
+            (student[0], day_of_week, start_time, end_time)
+        )
+        await db.commit()
+        return {'success': True, 'message': 'Расписание добавлено'}
+
+
+async def get_schedule(student_id: int):
+    # Получить расписание студента по telegram_id
+    async with aiosqlite.connect(DB_NAME) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT * FROM schedule WHERE student_id = (SELECT id FROM students WHERE telegram_id = ?) ORDER BY id",
+            (student_id,)
+        )
+        rows = await cursor.fetchall()
+        return [dict(row) for row in rows] if rows else []
+
+
+async def delete_schedule(schedule_id: int) -> bool:
+    # Удалить запись расписания по ID
+    async with aiosqlite.connect(DB_NAME) as db:
+        await db.execute("DELETE FROM schedule WHERE id = ?", (schedule_id,))
+        await db.commit()
+        return True
